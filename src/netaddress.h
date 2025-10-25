@@ -21,15 +21,23 @@ enum Network
     NET_UNROUTABLE = 0,
     NET_IPV4,
     NET_IPV6,
-    NET_TOR,
+    NET_ONION,
+    NET_INTERNAL,
 
     NET_MAX,
 };
 
-/** IP address (IPv6, or IPv4 using mapped IPv6 range (::FFFF:0:0/96)) */
+/**
+ * Network address.
+ */
 class CNetAddr
 {
     protected:
+        /**
+         * Network to which this address belongs.
+         */
+        Network m_net{NET_IPV6};
+
         unsigned char ip[16]; // in network byte order
         uint32_t scopeId; // for scoped/link-local ipv6 addresses
 
@@ -40,12 +48,22 @@ class CNetAddr
         void SetIP(const CNetAddr& ip);
 
         /**
+         * Set from a legacy IPv6 address.
+         * Legacy IPv6 address may be a normal IPv6 address, or another address
+         * (e.g. IPv4) disguised as IPv6. This encoding is used in the legacy
+         * `addr` encoding.
+         */
+        void SetLegacyIPv6(const uint8_t ipv6[16]);
+
+        /**
          * Set raw IPv4 or IPv6 address (in network byte order)
          * @note Only NET_IPV4 and NET_IPV6 are allowed for network.
          */
         void SetRaw(Network network, const uint8_t *data);
 
+        bool SetInternal(const std::string &name);
         bool SetSpecial(const std::string &strName); // for Tor addresses
+        bool IsBindAny() const; // INADDR_ANY equivalent
         bool IsIPv4() const;    // IPv4 mapped address (::FFFF:0:0/96, 0.0.0.0/0)
         bool IsIPv6() const;    // IPv6 address (not mapped IPv4, not Tor)
         bool IsRFC1918() const; // IPv4 private networks (10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12)
@@ -58,12 +76,15 @@ class CNetAddr
         bool IsRFC4193() const; // IPv6 unique local (FC00::/7)
         bool IsRFC4380() const; // IPv6 Teredo tunnelling (2001::/32)
         bool IsRFC4843() const; // IPv6 ORCHID (2001:10::/28)
+        bool IsRFC7343() const; // IPv6 ORCHIDv2 (2001:20::/28)
         bool IsRFC4862() const; // IPv6 autoconfig (FE80::/64)
         bool IsRFC6052() const; // IPv6 well-known prefix (64:FF9B::/96)
         bool IsRFC6145() const; // IPv6 IPv4-translated address (::FFFF:0:0:0/96)
+        bool IsHeNet() const;   // IPv6 Hurricane Electric - https://he.net (2001:0470::/36)
         bool IsTor() const;
         bool IsLocal() const;
         bool IsRoutable() const;
+        bool IsInternal() const;
         bool IsValid() const;
         bool IsMulticast() const;
         enum Network GetNetwork() const;
@@ -83,11 +104,26 @@ class CNetAddr
         friend bool operator!=(const CNetAddr& a, const CNetAddr& b);
         friend bool operator<(const CNetAddr& a, const CNetAddr& b);
 
-        ADD_SERIALIZE_METHODS;
+        /**
+         * Serialize to a stream.
+         */
+        template <typename Stream>
+        void Serialize(Stream& s) const
+        {
+            s << ip;
+        }
 
-        template <typename Stream, typename Operation>
-        inline void SerializationOp(Stream& s, Operation ser_action) {
-            READWRITE(FLATDATA(ip));
+        /**
+         * Unserialize from a stream.
+         */
+        template <typename Stream>
+        void Unserialize(Stream& s)
+        {
+            unsigned char ip_temp[sizeof(ip)];
+            s >> ip_temp;
+            // Use SetLegacyIPv6() so that m_net is set correctly. For example
+            // ::FFFF:0102:0304 should be set as m_net=NET_IPV4 (1.2.3.4).
+            SetLegacyIPv6(ip_temp);
         }
 
         friend class CSubNet;

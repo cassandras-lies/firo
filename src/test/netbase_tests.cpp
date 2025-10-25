@@ -32,7 +32,7 @@ BOOST_AUTO_TEST_CASE(netbase_networks)
     BOOST_CHECK(ResolveIP("::1").GetNetwork()                                    == NET_UNROUTABLE);
     BOOST_CHECK(ResolveIP("8.8.8.8").GetNetwork()                                == NET_IPV4);
     BOOST_CHECK(ResolveIP("2001::8888").GetNetwork()                             == NET_IPV6);
-    BOOST_CHECK(ResolveIP("FD87:D87E:EB43:edb1:8e4:3588:e546:35ca").GetNetwork() == NET_TOR);
+    BOOST_CHECK(ResolveIP("FD87:D87E:EB43:edb1:8e4:3588:e546:35ca").GetNetwork() == NET_ONION);
 
 }
 
@@ -119,6 +119,14 @@ BOOST_AUTO_TEST_CASE(onioncat_test)
 
 }
 
+BOOST_AUTO_TEST_CASE(embedded_test)
+{
+    CNetAddr addr1(ResolveIP("1.2.3.4"));
+    CNetAddr addr2(ResolveIP("::FFFF:0102:0304"));
+    BOOST_CHECK(addr2.IsIPv4());
+    BOOST_CHECK_EQUAL(addr1.ToString(), addr2.ToString());
+}
+
 BOOST_AUTO_TEST_CASE(subnet_test)
 {
 
@@ -139,9 +147,13 @@ BOOST_AUTO_TEST_CASE(subnet_test)
     BOOST_CHECK(ResolveSubNet("1.2.2.1/24").Match(ResolveIP("1.2.2.4")));
     BOOST_CHECK(ResolveSubNet("1.2.2.110/31").Match(ResolveIP("1.2.2.111")));
     BOOST_CHECK(ResolveSubNet("1.2.2.20/26").Match(ResolveIP("1.2.2.63")));
-    // All-Matching IPv6 Matches arbitrary IPv4 and IPv6
+    // All-Matching IPv6 Matches arbitrary IPv6
     BOOST_CHECK(ResolveSubNet("::/0").Match(ResolveIP("1:2:3:4:5:6:7:1234")));
-    BOOST_CHECK(ResolveSubNet("::/0").Match(ResolveIP("1.2.3.4")));
+    // But not `::` or `0.0.0.0` because they are considered invalid addresses
+    BOOST_CHECK(!ResolveSubNet("::/0").Match(ResolveIP("::")));
+    BOOST_CHECK(!ResolveSubNet("::/0").Match(ResolveIP("0.0.0.0")));
+    // Addresses from one network (IPv4) don't belong to subnets of another network (IPv6)
+    BOOST_CHECK(!ResolveSubNet("::/0").Match(ResolveIP("1.2.3.4")));
     // All-Matching IPv4 does not Match IPv6
     BOOST_CHECK(!ResolveSubNet("0.0.0.0/0").Match(ResolveIP("1:2:3:4:5:6:7:1234")));
     // Invalid subnets Match nothing (not even invalid addresses)
@@ -269,7 +281,7 @@ BOOST_AUTO_TEST_CASE(subnet_test)
 BOOST_AUTO_TEST_CASE(netbase_getgroup)
 {
 
-    BOOST_CHECK(ResolveIP("127.0.0.1").GetGroup() == boost::assign::list_of(0)); // Local -> !Routable()
+    BOOST_CHECK(ResolveIP("127.0.0.1").GetGroup() == boost::assign::list_of(255)); // Local -> separate group
     BOOST_CHECK(ResolveIP("257.0.0.1").GetGroup() == boost::assign::list_of(0)); // !Valid -> !Routable()
     BOOST_CHECK(ResolveIP("10.0.0.1").GetGroup() == boost::assign::list_of(0)); // RFC1918 -> !Routable()
     BOOST_CHECK(ResolveIP("169.254.1.1").GetGroup() == boost::assign::list_of(0)); // RFC3927 -> !Routable()
@@ -278,7 +290,7 @@ BOOST_AUTO_TEST_CASE(netbase_getgroup)
     BOOST_CHECK(ResolveIP("64:FF9B::102:304").GetGroup() == boost::assign::list_of((unsigned char)NET_IPV4)(1)(2)); // RFC6052
     BOOST_CHECK(ResolveIP("2002:102:304:9999:9999:9999:9999:9999").GetGroup() == boost::assign::list_of((unsigned char)NET_IPV4)(1)(2)); // RFC3964
     BOOST_CHECK(ResolveIP("2001:0:9999:9999:9999:9999:FEFD:FCFB").GetGroup() == boost::assign::list_of((unsigned char)NET_IPV4)(1)(2)); // RFC4380
-    BOOST_CHECK(ResolveIP("FD87:D87E:EB43:edb1:8e4:3588:e546:35ca").GetGroup() == boost::assign::list_of((unsigned char)NET_TOR)(239)); // Tor
+    BOOST_CHECK(ResolveIP("FD87:D87E:EB43:edb1:8e4:3588:e546:35ca").GetGroup() == boost::assign::list_of((unsigned char)NET_ONION)(239)); // Tor
     BOOST_CHECK(ResolveIP("2001:470:abcd:9999:9999:9999:9999:9999").GetGroup() == boost::assign::list_of((unsigned char)NET_IPV6)(32)(1)(4)(112)(175)); //he.net
     BOOST_CHECK(ResolveIP("2001:2001:9999:9999:9999:9999:9999:9999").GetGroup() == boost::assign::list_of((unsigned char)NET_IPV6)(32)(1)(32)(1)); //IPv6
 
